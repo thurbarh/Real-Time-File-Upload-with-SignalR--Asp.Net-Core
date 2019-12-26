@@ -1,0 +1,200 @@
+﻿@{
+    ViewData["Title"] = "File Upload";
+}
+
+<style>
+    .fileUpload {
+        position: relative;
+        overflow: hidden;
+        margin: 0;
+    }
+    .fileUpload input.upload {
+        position: absolute;
+        top: 0;
+        right: 0;
+        margin: 0;
+        padding: 0;
+        font-size: 20px;
+        cursor: pointer;
+        opacity: 0;
+        filter: alpha(opacity=0);
+    }
+</style>
+
+<div class="row">
+    <div class="col-md-6">
+        <div class="input-group">
+            <input id="uploadFile" placeholder="" disabled="disabled" class="form-control" style="height:36px" />
+            <div class="input-group-btn">
+                <div class="fileUpload btn btn-info">
+                    <span>...</span>
+                    <input type="file" name="fileToUpload" id="fileToUpload" class="upload" onchange="fileToUploadOnchange()" multiple accept=".csv" />
+                </div>
+            </div>
+        </div>
+    </div>
+    <input type="button" class="btn btn-info btn-sm" value="Upload" id="btnUpload" />
+</div>
+<p></p>
+<div class="text-center">
+
+    <div class="row">
+        <div class="col-md-12">
+            <table class="table table-bordered table-hover" style="width:100%">
+                <thead>
+                    <tr>
+                        <th>S/N</th>
+                        <th>Company</th>
+                        <th>Category</th>
+                        <th>City</th>
+                        <th>Funded Date</th>
+                        <th>Currency</th>
+                        <th>Amount</th>
+                    </tr>
+                </thead>
+                <tbody id="tableBody">
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<div id="progressModal" class="modal fade modal-center-c" tabindex="-1" role="dialog" data-backdrop="static">
+    <div class="modal-dialog modal-lg" style="width: 50% !important;   top: 40vh;">
+        <div class="modal-content">
+            <div class="modal-body">
+                <div class="row">
+                    <div class="col-md-10">
+                        <div class="progress">
+                            <div class="progress-bar progress-bar-striped" role="progressbar" id="progress_bar" style="width: 0%" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100"></div>
+                        </div>
+                    </div>
+                    <div class="col-md-2">
+                          <span>Count: <text id="uploadCount">0</text></span>
+                    </div>
+                </div>
+            </div>
+        </div> <!-- / .modal-content -->
+    </div> <!-- / .modal-dialog -->
+</div> <!-- / .modal -->
+
+
+@section Scripts{
+    <script src="~/js/signalr/dist/browser/signalr.js"></script>
+    <script>
+        var connection = new signalR.HubConnectionBuilder().withUrl("/broadcast").build();
+        connection.on("feedBack", function (model) {
+            $("#progress_bar").css("width", `${model.currentPercent}%`);
+            $("#uploadCount").html(model.uploadCount);
+        });
+        connection.start().then(function ()
+        {
+            console.log("Sinalr Connected");
+        }).catch(function (err) {
+            console.log(err.toString());
+        });
+
+        $(document).ready(function () {
+            defaultTableContent();
+        })
+        $("#btnUpload").click(function (e) {
+            e.preventDefault();
+            uploadFile();
+
+        });
+        function defaultTableContent() {
+            var empltyTableTemplate = $("<tr></tr>");
+            var placeholder = "<td colSpan='7'><p>No Data</p></td>";
+            empltyTableTemplate.html(placeholder);
+            $("#tableBody").html(empltyTableTemplate);
+        }
+        function fileToUploadOnchange() {
+            $this = document.getElementById("fileToUpload");
+            fileSelected($this);
+        }
+        function fileSelected(input) {
+            var file = document.getElementById('fileToUpload').files[0];
+
+            var ext = input.value.split('.');
+            ext = ext[ext.length - 1].toLowerCase();
+            var arrayExtensions = ['csv'];
+            if (arrayExtensions.lastIndexOf(ext.toLowerCase()) == -1) {
+                alert("You can only upload .CSV File");
+                input.value = '';
+                document.getElementById("uploadFile").value = '';
+                return;
+            }
+            document.getElementById("uploadFile").value = file.name;
+            if (file) {
+                var fileSize = 0;
+                if (file.size > 1024 * 1024)
+                    fileSize = (Math.round(file.size * 100 / (1024 * 1024)) / 100).toString() + 'MB';
+                else
+                    fileSize = (Math.round(file.size * 100 / 1024) / 100).toString() + 'KB';
+            }
+        }
+
+        function uploadFile() {
+            var file = document.getElementById('fileToUpload').files[0];
+            if (file) {
+                $("#progressModal").modal("show");
+                var url = '@Url.Action("UploadFile", "Upload")';
+                var fd = new FormData();
+                fd.append("fileToUpload", file);
+                var xhr = new XMLHttpRequest();
+                xhr.addEventListener("load", uploadComplete, false);
+                xhr.addEventListener("error", uploadFailed, false);
+                xhr.addEventListener("abort", uploadCanceled, false);
+                xhr.open("POST", url);
+                xhr.send(fd);
+            } else {
+                alert("You are can not upload an empty file");
+            }
+        }
+
+        function uploadComplete(evt) {
+            var response = JSON.parse(evt.target.response);
+             $("#progressModal").modal("hide");
+             ResetUploadModal();
+            if (response.error) {
+                alert(response.message);
+                return;
+            }
+            populateTableData(response.data);
+           
+        }
+        function populateTableData(data) {
+            if (data.length <= 0) return;
+                $("#tableBody").html('');
+            $.each(data, function (i, val) {
+                let tableRow = $("<tr></tr>");
+                let tablecells = `<td>${i + 1}</td>` +
+                    `<td>${val.company}</td>` +
+                    `<td>${val.category}</td>` +
+                    `<td>${val.city}</td>` +
+                    `<td>${val.date}</td>` +
+                    `<td>${val.currency}</td>` +
+                    `<td>${val.strAmount}</td>`;
+                tableRow.html(tablecells);
+                $("#tableBody").append(tableRow[0]);
+            });
+        }
+        function uploadFailed(evt) {
+            $("#progressModal").modal("hide");
+            ResetUploadModal();
+            alert("There was an error attempting to upload the file");
+        }
+        function uploadCanceled(evt) {
+            $("#progressModal").modal("hide");
+            ResetUploadModal();
+            alert("The upload has been canceled by the user or the browser dropped the connection")
+        }
+        function ResetUploadModal() {
+            document.getElementById("uploadFile").value = '';
+            document.getElementById("fileToUpload").value = null;
+            $("#progressContainer").hide();
+            $("#progress_bar").css("width", "-1%");
+        }
+    </script>
+
+}
